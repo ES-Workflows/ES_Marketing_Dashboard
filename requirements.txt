@@ -1,0 +1,8 @@
+requests==2.31.0
+beautifulsoup4==4.12.2
+supabase==1.0.3
+postgrest-py==0.10.8
+realtime-py==0.1.5
+gotrue==0.3.3
+storage3==0.5.1
+lxml==4.9.3
