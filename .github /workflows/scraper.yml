@@ -1,0 +1,47 @@
+name: LinkedIn Data Pipeline
+
+# ✅ Give GitHub Actions permission to push commits
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  run_pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      # ✅ Checkout repo with credentials preserved for pushing
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests beautifulsoup4 schedule supabase
+
+      - name: Run LinkedIn data pipeline
+        env:
+          SCRAPINGDOG_API_KEY: ${{ secrets.SCRAPINGDOG_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python main.py
+
+      # ✅ Commit & push updated CSV back to GitHub
+      - name: Commit updated CSV to repo
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add linkedin_followers.csv
+          git commit -m "Update follower data [skip ci]" || echo "No changes to commit"
+          git push
