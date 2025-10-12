@@ -1,4 +1,4 @@
-name: LinkedIn Data
+name: LinkedIn Data Pipeline
 
 # ✅ Give GitHub Actions permission to push commits
 permissions:
