@@ -155,7 +155,7 @@ def fetch_linkedin_posts():
 
         if posts:
             df = pd.DataFrame(posts)
-            file_path = "linkedin_posts.csv"
+            file_path = "lnkdn.csv"
             df.to_csv(file_path, index=False)
             logging.info(f"📰 Saved {len(df)} posts")
 
