@@ -1,47 +1,49 @@
 name: LinkedIn Data Pipeline
 
-# ✅ Give GitHub Actions permission to push commits
 permissions:
   contents: write
 
 on:
   schedule:
-   - cron: '*/40 * * * *'
-  workflow_dispatch:  # allow manual trigger
+    - cron: '*/20 * * * *'   # every 5 minutes
+  workflow_dispatch:
 
 jobs:
   run_pipeline:
     runs-on: ubuntu-latest
+
     steps:
-      # ✅ Checkout repo with credentials preserved for pushing
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests beautifulsoup4 schedule supabase
+          pip install -r requirements.txt
 
-      - name: Run LinkedIn data pipeline
+      - name: Run data pipeline
         env:
           SCRAPINGDOG_API_KEY: ${{ secrets.SCRAPINGDOG_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}      # e.g., https://xxxx.supabase.co
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}      # anon or service key (read/write to bucket)
+          COMPANY_LINKID:      extrastaff-recruitment
+          COMPANY_URL:         https://www.linkedin.com/company/extrastaff-recruitment
+          BUCKET_NAME:         csv-files                        # your bucket
         run: python main.py
 
-      # ✅ Commit & push updated CSV back to GitHub
-      - name: Commit updated CSV to repo
+      # Optional: keep CSVs versioned in repo (remove if you don't need history in Git)
+      - name: Commit updated CSVs
         run: |
-          git config --global user.name "github-actions[bot]"
+          git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add linkedin_followers.csv
-          git commit -m "Update follower data [skip ci]" || echo "No changes to commit"
-          git push
+          git add linkedin_followers.csv lnkdn.csv || true
+          git commit -m "Update CSVs [skip ci]" || echo "No changes"
+          git push || true
