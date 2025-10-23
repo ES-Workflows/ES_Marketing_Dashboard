@@ -3,27 +3,27 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import quote
 
-# ---------- Env ----------
+# ====== ENV / CONFIG ======
 SCRAPINGDOG_API_KEY = os.environ["SCRAPINGDOG_API_KEY"]
 SUPABASE_URL        = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_KEY        = os.environ["SUPABASE_KEY"]
-BUCKET_NAME         = os.environ.get("BUCKET_NAME", "csv-files")     # may contain spaces
+BUCKET_NAME         = os.environ.get("BUCKET_NAME", "csv-files")
 COMPANY_LINKID      = os.environ.get("COMPANY_LINKID", "extrastaff-recruitment")
-COMPANY_URL         = os.environ.get("COMPANY_URL", "https://www.linkedin.com/company/extrastaff-recruitment")
+COMPANY_URL         = os.environ.get("COMPANY_URL", f"https://www.linkedin.com/company/{COMPANY_LINKID}")
 
 FOLLOWERS_CSV = "linkedin_followers.csv"
 POSTS_CSV     = "lnkdn.csv"
 
-# ---------- Logging ----------
+# ====== LOGGING ======
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# ---------- Helpers ----------
+# ====== UTIL ======
 def upload_csv_to_supabase(file_path: str):
-    """Uploads/overwrites CSV to Supabase Storage (handles spaces via URL-encoding)."""
-    file_name = os.path.basename(file_path)
-    bucket_safe = quote(BUCKET_NAME, safe="")     # encodes spaces etc.
-    fname_safe  = quote(file_name,   safe="")
-    url = f"{SUPABASE_URL}/storage/v1/object/{bucket_safe}/{fname_safe}"
+    """Upload/overwrite CSV to Supabase Storage (handles spaces via URL-encoding)."""
+    file_name  = os.path.basename(file_path)
+    bucket_enc = quote(BUCKET_NAME, safe="")
+    fname_enc  = quote(file_name,   safe="")
+    url = f"{SUPABASE_URL}/storage/v1/object/{bucket_enc}/{fname_enc}"
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -50,9 +50,9 @@ def parse_int(text: str):
     m2 = re.search(r"(\d[\d\.]*)", s)
     return int(float(m2.group(1))) if m2 else None
 
-# ---------- Followers ----------
+# ====== FOLLOWERS ======
 def fetch_followers():
-    """Use Scrapingdog generic scrape to avoid LinkedIn login wall."""
+    """Use Scrapingdog generic scrape (JS rendered) to avoid auth walls."""
     api = "https://api.scrapingdog.com/scrape"
     params = {"api_key": SCRAPINGDOG_API_KEY, "url": COMPANY_URL, "render_js": "true"}
     r = requests.get(api, params=params, timeout=60)
@@ -62,7 +62,8 @@ def fetch_followers():
     soup = BeautifulSoup(r.text, "lxml")
     txt = soup.get_text(" ", strip=True)
     m = re.search(r"(\d[\d,\.]*\s*[KkMm]?)\s*followers", txt)
-    return parse_int(m.group(1)) if m else None
+    followers = parse_int(m.group(1)) if m else None
+    return followers
 
 def append_followers_row(count: int):
     file_exists = os.path.exists(FOLLOWERS_CSV)
@@ -75,29 +76,80 @@ def append_followers_row(count: int):
         w.writerow(row)
     logging.info(f"Saved followers row: {row}")
 
-# ---------- Posts (company feed) ----------
-def fetch_company_posts_page(start=None, limit=None):
-    api = "https://api.scrapingdog.com/linkedin"
-    params = {"api_key": SCRAPINGDOG_API_KEY, "type": "company", "linkId": COMPANY_LINKID}
-    if start is not None: params["start"] = start
-    if limit is not None: params["limit"] = limit
-    r = requests.get(api, params=params, timeout=60)
-    if r.status_code != 200:
-        logging.error(f"Posts page HTTP {r.status_code}")
-        return []
-    data = r.json()
-    return (data or [{}])[0].get("updates", []) if isinstance(data, list) else []
+# ====== POSTS: FETCH ======
+def try_company_updates_calls():
+    """
+    Try multiple Scrapingdog endpoints/param styles.
+    Returns Python list of 'updates' dicts, or [].
+    """
+    attempts = [
+        # classic endpoint
+        ("https://api.scrapingdog.com/linkedin", {"type": "company", "linkId": COMPANY_LINKID}),
+        # sometimes they accept username instead of linkId
+        ("https://api.scrapingdog.com/linkedin", {"type": "company", "username": COMPANY_LINKID}),
+        # newer path-style endpoints (some plans)
+        ("https://api.scrapingdog.com/linkedin/company", {"linkId": COMPANY_LINKID}),
+        ("https://api.scrapingdog.com/linkedin/company", {"username": COMPANY_LINKID}),
+    ]
 
-def fetch_posts_all_pages(limit=20, max_pages=10):
+    for base, extra in attempts:
+        params = {"api_key": SCRAPINGDOG_API_KEY, **extra}
+        try:
+            r = requests.get(base, params=params, timeout=60)
+            if r.status_code != 200:
+                logging.error(f"Posts page HTTP {r.status_code} for {base} with {extra}")
+                continue
+            data = r.json()
+            # common structure: [ { ..., "updates": [...] } ]
+            updates = (data or [{}])[0].get("updates", []) if isinstance(data, list) else []
+            if updates:
+                return updates
+        except Exception as e:
+            logging.error(f"Posts fetch error ({base}): {e}")
+    return []
+
+def fetch_posts_all_pages(limit=20, max_pages=10, sleep_sec=1):
+    """
+    If the API supports pagination with start/limit, try it.
+    Otherwise fall back to a single successful call from try_company_updates_calls.
+    """
     all_posts = []
-    for i in range(max_pages):
-        page = fetch_company_posts_page(start=i*limit, limit=limit)
-        if not page: break
-        all_posts.extend(page)
-        if len(page) < limit: break
-        time.sleep(1)
-    if not all_posts:     # if pagination not supported, at least get first page
-        all_posts = fetch_company_posts_page()
+    # First, try a single call without pagination
+    first = try_company_updates_calls()
+    if first:
+        all_posts.extend(first)
+
+    # Now attempt paginated variants
+    paginated_attempts = [
+        ("https://api.scrapingdog.com/linkedin", {"type": "company", "linkId": COMPANY_LINKID}),
+        ("https://api.scrapingdog.com/linkedin", {"type": "company", "username": COMPANY_LINKID}),
+        ("https://api.scrapingdog.com/linkedin/company", {"linkId": COMPANY_LINKID}),
+        ("https://api.scrapingdog.com/linkedin/company", {"username": COMPANY_LINKID}),
+    ]
+
+    for base, extra in paginated_attempts:
+        got_any = False
+        for i in range(max_pages):
+            params = {"api_key": SCRAPINGDOG_API_KEY, **extra, "start": i * limit, "limit": limit}
+            try:
+                r = requests.get(base, params=params, timeout=60)
+                if r.status_code != 200:
+                    break
+                data = r.json()
+                page = (data or [{}])[0].get("updates", []) if isinstance(data, list) else []
+                if not page:
+                    break
+                got_any = True
+                all_posts.extend(page)
+                if len(page) < limit:
+                    break
+                time.sleep(sleep_sec)
+            except Exception as e:
+                logging.error(f"Pagination error ({base}): {e}")
+                break
+        if got_any:
+            break  # stop after first paginated style that worked
+
     return all_posts
 
 def save_posts_append_dedupe():
@@ -115,6 +167,7 @@ def save_posts_append_dedupe():
     else:
         df_all = df_new
 
+    # ensure metric columns exist (will be enriched later)
     for c in ["impressions","reactions","comments","reposts"]:
         if c not in df_all.columns:
             df_all[c] = pd.NA
@@ -125,8 +178,9 @@ def save_posts_append_dedupe():
     df_all.to_csv(POSTS_CSV, index=False, encoding="utf-8")
     logging.info(f"Saved {len(df_all)} total posts to {POSTS_CSV}")
 
-# ---------- Per-post metric enrichment ----------
+# ====== POSTS: ENRICH (impressions/comments/reactions/reposts) ======
 def fetch_post_metrics(article_link: str):
+    """Scrape post page via generic endpoint and parse metrics."""
     try:
         api = "https://api.scrapingdog.com/scrape"
         params = {"api_key": SCRAPINGDOG_API_KEY, "url": article_link, "render_js": "true"}
@@ -153,6 +207,7 @@ def fetch_post_metrics(article_link: str):
         return {}
 
 def enrich_posts_metrics(csv_path=POSTS_CSV, max_to_enrich=20, sleep_sec=2):
+    """Fill missing metrics (batch each run to respect rate limits)."""
     if not os.path.exists(csv_path): return
     df = pd.read_csv(csv_path)
     need = df[df[["impressions","reactions","comments","reposts"]].isna().all(axis=1)]
@@ -160,30 +215,34 @@ def enrich_posts_metrics(csv_path=POSTS_CSV, max_to_enrich=20, sleep_sec=2):
     if need.empty:
         logging.info("No posts need enrichment.")
         return
+
     updated = 0
     for idx, row in need.iterrows():
         url = row.get("article_link")
-        if not isinstance(url, str) or not url.startswith("http"): continue
+        if not isinstance(url, str) or not url.startswith("http"):
+            continue
         m = fetch_post_metrics(url)
         if m:
-            for k,v in m.items(): df.at[idx, k] = v
+            for k, v in m.items():
+                df.at[idx, k] = v
             updated += 1
         time.sleep(sleep_sec)
+
     if updated:
         df.to_csv(csv_path, index=False, encoding="utf-8")
         logging.info(f"Enriched metrics for {updated} posts.")
 
-# ---------- Main ----------
+# ====== MAIN ======
 if __name__ == "__main__":
     logging.info("🚀 Running LinkedIn data pipeline")
 
-    # followers
+    # Followers
     followers = fetch_followers()
     if followers is not None:
         append_followers_row(followers)
         upload_csv_to_supabase(FOLLOWERS_CSV)
 
-    # posts
+    # Posts
     save_posts_append_dedupe()
     enrich_posts_metrics(POSTS_CSV, max_to_enrich=20, sleep_sec=2)
     upload_csv_to_supabase(POSTS_CSV)
