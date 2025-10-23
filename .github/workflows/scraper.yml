@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '*/20 * * * *'     # every 5 minutes
+    - cron: '*/5 * * * *'     # every 5 minutes
   workflow_dispatch:
 
 jobs:
@@ -33,10 +33,10 @@ jobs:
         env:
           SCRAPINGDOG_API_KEY: ${{ secrets.SCRAPINGDOG_API_KEY }}
           SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}      # e.g. https://xxxx.supabase.co
-          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}      # anon key ok for public-read bucket; service key if private
-          COMPANY_LINKID:      extrastaff-recruitment
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}      # anon ok for public-write policy; service key if private
+          COMPANY_LINKID:      extrastaff-recruitment           # your LinkedIn company handle/slug
           COMPANY_URL:         https://www.linkedin.com/company/extrastaff-recruitment
-          BUCKET_NAME:         Marketing Database                # <-- your bucket with space; code URL-encodes it
+          BUCKET_NAME:         Marketing Database               # your bucket (with a space)
         run: python main.py
 
       # Optional: keep CSVs versioned in repo
