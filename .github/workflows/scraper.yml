@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '*/5 * * * *'     # every 5 minutes
+    - cron: '*/10 * * * *'   # every 10 minutes (tweak as you like)
   workflow_dispatch:
 
 jobs:
@@ -32,18 +32,17 @@ jobs:
       - name: Run data pipeline
         env:
           SCRAPINGDOG_API_KEY: ${{ secrets.SCRAPINGDOG_API_KEY }}
-          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}      # e.g. https://xxxx.supabase.co
-          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}      # anon ok for public-write policy; service key if private
-          COMPANY_LINKID:      extrastaff-recruitment           # your LinkedIn company handle/slug
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}        # e.g. https://xxxxx.supabase.co
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}        # anon ok for public-write policy; service key if private
+          COMPANY_LINKID:      extrastaff-recruitment
           COMPANY_URL:         https://www.linkedin.com/company/extrastaff-recruitment
-          BUCKET_NAME:         Marketing Database               # your bucket (with a space)
+          BUCKET_NAME:         Marketing Database                  # your existing bucket (with space)
         run: python main.py
 
-      # Optional: keep CSVs versioned in repo
-      - name: Commit updated CSVs
+      - name: Commit updated CSVs (optional)
         run: |
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add linkedin_followers.csv lnkdn.csv || true
+          git add linkedin_followers.csv lnkdn.csv followers_daily.csv channel_summary.csv || true
           git commit -m "Update CSVs [skip ci]" || echo "No changes"
           git push || true
