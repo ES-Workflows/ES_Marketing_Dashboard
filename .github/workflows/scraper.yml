@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '*/20 * * * *'   # every 5 minutes
+    - cron: '*/20 * * * *'     # every 5 minutes
   workflow_dispatch:
 
 jobs:
@@ -32,14 +32,14 @@ jobs:
       - name: Run data pipeline
         env:
           SCRAPINGDOG_API_KEY: ${{ secrets.SCRAPINGDOG_API_KEY }}
-          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}      # e.g., https://xxxx.supabase.co
-          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}      # anon or service key (read/write to bucket)
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}      # e.g. https://xxxx.supabase.co
+          SUPABASE_KEY:        ${{ secrets.SUPABASE_KEY }}      # anon key ok for public-read bucket; service key if private
           COMPANY_LINKID:      extrastaff-recruitment
           COMPANY_URL:         https://www.linkedin.com/company/extrastaff-recruitment
-          BUCKET_NAME:         csv-files                        # your bucket
+          BUCKET_NAME:         Marketing Database                # <-- your bucket with space; code URL-encodes it
         run: python main.py
 
-      # Optional: keep CSVs versioned in repo (remove if you don't need history in Git)
+      # Optional: keep CSVs versioned in repo
       - name: Commit updated CSVs
         run: |
           git config --global user.name  "github-actions[bot]"
