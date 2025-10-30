@@ -25,7 +25,7 @@ SCRAPINGDOG_API_KEY = os.environ.get("SCRAPINGDOG_API_KEY")
 LINKEDIN_URL = "https://www.linkedin.com/company/extrastaff-recruitment"
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-BUCKET_NAME = "Marketing Dashboard"
+BUCKET_NAME = "Marketing Database"
 
 # Logging configuration
 logging.basicConfig(
